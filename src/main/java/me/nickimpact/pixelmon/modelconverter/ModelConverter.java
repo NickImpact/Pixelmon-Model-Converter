@@ -21,7 +21,7 @@ import java.util.stream.Collectors;
 
 public class ModelConverter {
 
-	private static boolean debug = false;
+	public static boolean debug = false;
 
 	public static AtomicInteger processed = new AtomicInteger(0);
 	public static AtomicInteger successful = new AtomicInteger(0);
@@ -30,20 +30,25 @@ public class ModelConverter {
 		List<String> arguments = Arrays.stream(args).filter(a -> !a.startsWith("-")).collect(Collectors.toList());
 		List<String> flags = Arrays.stream(args).filter(a -> a.startsWith("-")).collect(Collectors.toList());
 
-		if(arguments.size() < 3) {
-			System.err.println("Usage: java -jar (jar name) [-debug] (pixelmon version) (input directory) (output directory)");
+		if(arguments.size() < 4) {
+			System.err.println("Usage: java -jar (jar name) [-debug] (encode/decode) (pixelmon version) (input directory) (output directory)");
 			System.exit(1);
 		}
 
-		String version = arguments.get(0);
-		File base = new File(arguments.get(1));
-		File output = new File(arguments.get(2));
+		if(!arguments.get(0).equalsIgnoreCase("decode") && !arguments.get(0).equalsIgnoreCase("encode")) {
+			System.err.println("Unsure what procedure to run! Ensure you supply encode or decode as the first argument!");
+		}
+
+		boolean type = arguments.get(0).equalsIgnoreCase("decode");
+		String version = arguments.get(1);
+		File base = new File(arguments.get(2));
+		File output = new File(arguments.get(3));
 
 		if(flags.contains("-debug")) {
 			debug = true;
 		}
 
-		Translator translator = parse(version).orElseGet(() -> {
+		Translator translator = parse(type, version).orElseGet(() -> {
 			System.out.println("Invalid Pixelmon version... Must be Reforged or Generations");
 			System.exit(1);
 			return null;
@@ -91,11 +96,11 @@ public class ModelConverter {
 		}
 	}
 
-	private static Optional<Translator> parse(String version) {
+	private static Optional<Translator> parse(boolean type, String version) {
 		if(version.toLowerCase().equals("reforged")) {
-			return Optional.of(new ReforgedTranslator());
+			return Optional.of(type ? new ReforgedTranslator.ReforgedDeserializer() : new ReforgedTranslator.ReforgedSerializer());
 		} else if(version.toLowerCase().equals("generations")) {
-			return Optional.of(new GenerationsTranslator());
+			return Optional.of(type ? new GenerationsTranslator.GensDeserializer() : new GenerationsTranslator.GensSerializer());
 		}
 
 		return Optional.empty();

@@ -9,4 +9,8 @@ public interface Translator {
 
     void process(File directory, File output);
 
+    interface Deserializer extends Translator {}
+
+    interface Serializer extends Translator {}
+
 }
