@@ -2,22 +2,16 @@ package me.nickimpact.pixelmon.modelconverter;
 
 import me.nickimpact.pixelmon.modelconverter.generations.GenerationsTranslator;
 import me.nickimpact.pixelmon.modelconverter.reforged.ReforgedTranslator;
+import me.nickimpact.pixelmon.modelconverter.ui.MCInterface;
 import me.nickimpact.pixelmon.modelconverter.util.Time;
 
+import javax.swing.*;
 import java.io.File;
 import java.nio.file.Files;
-import java.text.DecimalFormat;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Arrays;
 import java.util.List;
-import java.util.Optional;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
 
 public class ModelConverter {
 
@@ -27,67 +21,68 @@ public class ModelConverter {
 	public static AtomicInteger successful = new AtomicInteger(0);
 
 	public static void main(String[] args) {
-		List<String> arguments = Arrays.stream(args).filter(a -> !a.startsWith("-")).collect(Collectors.toList());
-		List<String> flags = Arrays.stream(args).filter(a -> a.startsWith("-")).collect(Collectors.toList());
+		new MCInterface().open();
+	}
 
-		if(arguments.size() < 4) {
-			System.err.println("Usage: java -jar (jar name) [-debug] (encode/decode) (pixelmon version) (input directory) (output directory)");
-			System.exit(1);
-		}
+	public static void run(boolean mode, boolean state, File in, File out, JTextField status, JLabel total, JLabel processed, JLabel successful, JProgressBar progress) {
+		Translator translator = parse(mode, state);
+		out.mkdirs();
 
-		if(!arguments.get(0).equalsIgnoreCase("decode") && !arguments.get(0).equalsIgnoreCase("encode")) {
-			System.err.println("Unsure what procedure to run! Ensure you supply encode or decode as the first argument!");
-		}
+		ModelConverter.processed.set(0);
+		ModelConverter.successful.set(0);
 
-		boolean type = arguments.get(0).equalsIgnoreCase("decode");
-		String version = arguments.get(1);
-		File base = new File(arguments.get(2));
-		File output = new File(arguments.get(3));
+		SwingWorker<Void, Void> worker = new SwingWorker<Void, Void>() {
+			@Override
+			protected Void doInBackground() throws Exception {
+				total.setText("Total: " + 0);
+				processed.setText("Processed: " + ModelConverter.processed.get());
+				successful.setText("Successful: " + ModelConverter.successful.get());
+				publish();
 
-		if(flags.contains("-debug")) {
-			debug = true;
-		}
+				try {
+					final int t = (int) Files.find(
+							in.toPath(),
+							10,
+							(p, a) -> {
+								File file = p.toFile();
+								return file.isDirectory() || matches(translator.getValidFileSuffixes(), file);
+							})
+							.filter(path -> !path.toFile().isDirectory())
+							.count();
+					total.setText("Total: " + t);
 
-		Translator translator = parse(type, version).orElseGet(() -> {
-			System.out.println("Invalid Pixelmon version... Must be Reforged or Generations");
-			System.exit(1);
-			return null;
-		});
+					Instant start = Instant.now();
+					for (File pokemon : in.listFiles()) {
+						try {
+							translator.process(pokemon, out);
+						} catch (Exception e) {
+							status.setText("Failure parsing species: " + pokemon.getName());
+							e.printStackTrace();
+							break;
+						} finally {
+							processed.setText("Processed: " + ModelConverter.processed.get());
+							successful.setText("Successful: " + ModelConverter.successful.get());
+							progress.setValue((int) (ModelConverter.processed.get() / (double) t * 100.0));
+							publish();
+						}
+					}
 
-		output.mkdirs();
+					Instant end = Instant.now();
 
-		try {
-			final int total;
-			System.out.println("Attempting to parse " + (total = (int) Files.find(
-					base.toPath(),
-					10,
-					(p, a) -> {
-						File file = p.toFile();
-						return file.isDirectory() || matches(translator.getValidFileSuffixes(), file);
-					})
-					.filter(path -> !path.toFile().isDirectory())
-					.count()) + " files...");
+					Duration duration = Duration.between(start, end);
+					status.setText("Successfully parsed " + ModelConverter.successful.get() + " out of " + t + " files! (Took " + new Time(duration.toMillis()) + ")");
+					publish();
+				} catch (Exception e) {
+					status.setText("Encountered a failure, consult the latest generated log file!");
+					e.printStackTrace();
+					publish();
+				}
 
-			final DecimalFormat df = new DecimalFormat("#0.00");
-			ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
-			final ScheduledFuture<?> task = scheduler.scheduleAtFixedRate(() -> {
-				System.out.println("Progress: " + df.format(processed.get() / (double) total * 100.0) + "% (" + processed.get() + "/" + total + ")");
-			}, 2, 2, TimeUnit.SECONDS);
-
-			Instant start = Instant.now();
-			for (File pokemon : base.listFiles()) {
-				translator.process(pokemon, output);
+				return null;
 			}
-			Instant end = Instant.now();
+		};
 
-			Duration duration = Duration.between(start, end);
-			task.cancel(true);
-			scheduler.shutdownNow();
-			System.out.println("Successfully parsed " + successful.get() + " out of " + total + " files! (Took " + new Time(duration.getSeconds()) + ")");
-		} catch (Exception e) {
-			System.err.println("Input directory appears invalid...");
-			e.printStackTrace();
-		}
+		worker.execute();
 	}
 
 	public static void debug(String message) {
@@ -96,14 +91,12 @@ public class ModelConverter {
 		}
 	}
 
-	private static Optional<Translator> parse(boolean type, String version) {
-		if(version.toLowerCase().equals("reforged")) {
-			return Optional.of(type ? new ReforgedTranslator.ReforgedDeserializer() : new ReforgedTranslator.ReforgedSerializer());
-		} else if(version.toLowerCase().equals("generations")) {
-			return Optional.of(type ? new GenerationsTranslator.GensDeserializer() : new GenerationsTranslator.GensSerializer());
+	private static Translator parse(boolean version, boolean type) {
+		if(version) {
+			return type ? new ReforgedTranslator.ReforgedDeserializer() : new ReforgedTranslator.ReforgedSerializer();
+		} else {
+			return type ? new GenerationsTranslator.GensDeserializer() : new GenerationsTranslator.GensSerializer();
 		}
-
-		return Optional.empty();
 	}
 
 	private static boolean matches(List<String> suffixes, File check) {

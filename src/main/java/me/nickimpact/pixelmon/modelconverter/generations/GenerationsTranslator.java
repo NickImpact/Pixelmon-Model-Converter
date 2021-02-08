@@ -78,7 +78,7 @@ public abstract class GenerationsTranslator implements Translator {
             }
         }
 
-        private SMDFile read(File in) throws Exception{
+        private SMDFile read(File in) throws Exception {
             BufferedInputStream inputStream = new BufferedInputStream(new FileInputStream(in));
 
             try (MessageUnpacker unpacker = MessagePack.newDefaultUnpacker(inputStream)) {
@@ -92,6 +92,8 @@ public abstract class GenerationsTranslator implements Translator {
             String result = new SMDTextWriter().write(smd);
             FileWriter writer = new FileWriter(outFile);
             writer.write(result);
+            writer.flush();
+            writer.close();
         }
     }
 

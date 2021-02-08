@@ -52,7 +52,7 @@ public abstract class ReforgedTranslator implements Translator {
                         decode(file, new File(output, directory.getName()));
                         successful.incrementAndGet();
                     } catch (Exception e) {
-                        System.err.println("Failed to read BMD for pokemon: " + String.format("%s (%s)", directory.getName(), file.getName()));
+                        throw new RuntimeException("Failed to read BMD for pokemon: " + String.format("%s (%s)", directory.getName(), file.getName()), e);
                     }
                 } else if(file.getName().endsWith(".smd")) {
                     debug("Cloning SMD: " + file.getName());
@@ -61,7 +61,7 @@ public abstract class ReforgedTranslator implements Translator {
                         Files.copy(file.toPath(), output.toPath().resolve(directory.getName()).resolve(file.getName()));
                         successful.incrementAndGet();
                     } catch (Exception e) {
-                        System.err.println("Failed to clone SMD for pokemon: " + String.format("%s (%s)", directory.getName(), file.getName()));
+                        throw new RuntimeException("Failed to clone SMD for pokemon: " + String.format("%s (%s)", directory.getName(), file.getName()), e);
                     }
                 } else if(file.getName().endsWith(".pqc")) {
                     debug("Cloning PQC: " + file.getName());
@@ -70,8 +70,7 @@ public abstract class ReforgedTranslator implements Translator {
                         Files.copy(file.toPath(), output.toPath().resolve(directory.getName()).resolve(file.getName()));
                         successful.incrementAndGet();
                     } catch (Exception e) {
-                        System.err.println("Failed to clone PQC for pokemon: " + String.format("%s (%s)", directory.getName(), file.getName()));
-                        e.printStackTrace();
+                        throw new RuntimeException("Failed to clone PQC for pokemon: " + String.format("%s (%s)", directory.getName(), file.getName()), e);
                     }
                 } else if(file.isDirectory()) {
                     process(file, output.toPath().resolve(directory.getName()).toFile());
