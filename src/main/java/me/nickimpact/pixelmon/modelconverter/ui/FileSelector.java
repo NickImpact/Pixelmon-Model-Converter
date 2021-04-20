@@ -4,6 +4,7 @@ import com.intellij.uiDesigner.core.GridConstraints;
 import com.intellij.uiDesigner.core.GridLayoutManager;
 
 import javax.swing.*;
+import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.*;
 import java.io.File;
 import java.util.function.Consumer;
@@ -14,6 +15,7 @@ public class FileSelector {
     private JPanel panel;
 
     public FileSelector(Consumer<File> consumer) {
+        this.selector.addChoosableFileFilter(new FileNameExtensionFilter("Jar Files", "jar"));
         if (this.selector.showOpenDialog(this.panel) == 0) {
             consumer.accept(this.selector.getSelectedFile());
         }
@@ -41,8 +43,9 @@ public class FileSelector {
         selector.setAutoscrolls(false);
         selector.setDialogTitle("Select your Input");
         selector.setDialogType(0);
-        selector.setFileSelectionMode(1);
-        selector.setName("Select location");
+        selector.setEnabled(false);
+        selector.setFileSelectionMode(2);
+        selector.setName("Select Input");
         panel.add(selector, new GridConstraints(0, 0, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, null, null, null, 0, false));
     }
 

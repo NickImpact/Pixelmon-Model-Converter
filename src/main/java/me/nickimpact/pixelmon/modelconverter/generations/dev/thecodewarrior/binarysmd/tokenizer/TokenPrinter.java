@@ -4,6 +4,7 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 public class TokenPrinter {
     private @NotNull List<@NotNull List<@NotNull Token>> lines = new ArrayList<>();
@@ -50,7 +51,7 @@ public class TokenPrinter {
 
     @NotNull
     public TokenPrinter print(float number) {
-        printDirect(String.format("%.6f", number));
+        printDirect(String.format(Locale.ENGLISH, "%.6f", number));
         return this;
     }
 

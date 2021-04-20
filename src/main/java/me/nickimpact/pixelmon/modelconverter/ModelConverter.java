@@ -6,16 +6,29 @@ import me.nickimpact.pixelmon.modelconverter.ui.MCInterface;
 import me.nickimpact.pixelmon.modelconverter.util.Time;
 
 import javax.swing.*;
+import java.io.BufferedWriter;
 import java.io.File;
+import java.io.FileWriter;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.nio.file.Files;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 public class ModelConverter {
 
-	public static boolean debug = false;
+	public static Pattern JAR_PATTERN = Pattern.compile("assets/pixelmon/models/pokemon/(?<species>[a-z-0-9]+)[/](?<rest>.+)");
+	public static boolean debug = true;
 
 	public static AtomicInteger processed = new AtomicInteger(0);
 	public static AtomicInteger successful = new AtomicInteger(0);
@@ -39,42 +52,97 @@ public class ModelConverter {
 				successful.setText("Successful: " + ModelConverter.successful.get());
 				publish();
 
+				Instant start = Instant.now();
 				try {
-					final int t = (int) Files.find(
-							in.toPath(),
-							10,
-							(p, a) -> {
-								File file = p.toFile();
-								return file.isDirectory() || matches(translator.getValidFileSuffixes(), file);
-							})
-							.filter(path -> !path.toFile().isDirectory())
-							.count();
-					total.setText("Total: " + t);
+					if(in.getName().endsWith(".jar") && state) {
+						JarFile file = new JarFile(in);
+						Pattern suffix = Pattern.compile("[.][a-zA-Z]+");
+						Set<JarEntry> entries = file.stream()
+								.filter(in -> {
+									Matcher matcher = suffix.matcher(in.getName());
+									if (in.getName().startsWith("assets/pixelmon/models/pokemon/") && matcher.find()) {
+										return translator.getValidFileSuffixes().contains(matcher.group());
+									}
+									return false;
+								})
+								.sorted(Comparator.comparing(JarEntry::getName))
+								.collect(Collectors.toCollection(LinkedHashSet::new));
 
-					Instant start = Instant.now();
-					for (File pokemon : in.listFiles()) {
-						try {
-							translator.process(pokemon, out);
-						} catch (Exception e) {
-							status.setText("Failure parsing species: " + pokemon.getName());
-							e.printStackTrace();
-							break;
-						} finally {
-							processed.setText("Processed: " + ModelConverter.processed.get());
-							successful.setText("Successful: " + ModelConverter.successful.get());
-							progress.setValue((int) (ModelConverter.processed.get() / (double) t * 100.0));
+						total.setText("Total: " + entries.size());
+						for (JarEntry entry : entries) {
+							try {
+								translator.process(file, entry, out);
+							} catch (Exception e) {
+								Matcher matcher = JAR_PATTERN.matcher(entry.getName());
+								matcher.find();
+								status.setText("Failure parsing species: " + matcher.group("species"));
+								e.printStackTrace();
+								break;
+							} finally {
+								processed.setText("Processed: " + ModelConverter.processed.get());
+								successful.setText("Successful: " + ModelConverter.successful.get());
+								progress.setValue((int) (ModelConverter.processed.get() / (double) entries.size() * 100.0));
+								publish();
+							}
+
+							Instant end = Instant.now();
+
+							Duration duration = Duration.between(start, end);
+							status.setText("Successfully parsed " + ModelConverter.successful.get() + " out of " + entries.size() + " files! (Took " + new Time(duration.toMillis()) + ")");
 							publish();
 						}
+					} else if(in.getName().endsWith(".jar")) {
+						status.setText("Reading .jar files is only available for deserialization!");
+					} else {
+						final int t = (int) Files.find(
+								in.toPath(),
+								10,
+								(p, a) -> {
+									File file = p.toFile();
+									return file.isDirectory() || matches(translator.getValidFileSuffixes(), file);
+								})
+								.filter(path -> !path.toFile().isDirectory())
+								.count();
+						total.setText("Total: " + t);
+
+						for (File pokemon : in.listFiles()) {
+							try {
+								translator.process(pokemon, out);
+							} catch (Exception e) {
+								status.setText("Failure parsing species: " + pokemon.getName());
+								e.printStackTrace();
+								break;
+							} finally {
+								processed.setText("Processed: " + ModelConverter.processed.get());
+								successful.setText("Successful: " + ModelConverter.successful.get());
+								progress.setValue((int) (ModelConverter.processed.get() / (double) t * 100.0));
+								publish();
+							}
+						}
+
+						Instant end = Instant.now();
+
+						Duration duration = Duration.between(start, end);
+						status.setText("Successfully parsed " + ModelConverter.successful.get() + " out of " + t + " files! (Took " + new Time(duration.toMillis()) + ")");
+						publish();
 					}
-
-					Instant end = Instant.now();
-
-					Duration duration = Duration.between(start, end);
-					status.setText("Successfully parsed " + ModelConverter.successful.get() + " out of " + t + " files! (Took " + new Time(duration.toMillis()) + ")");
-					publish();
 				} catch (Exception e) {
 					status.setText("Encountered a failure, consult the latest generated log file!");
-					e.printStackTrace();
+					File errors = new File("PMC-Errors");
+					errors.mkdirs();
+					File now = new File(errors, Instant.now() + ".log");
+					BufferedWriter writer = new BufferedWriter(new FileWriter(now));
+					try(StringWriter sw = new StringWriter(); PrintWriter pw = new PrintWriter(sw)) {
+						e.printStackTrace(pw);
+						pw.flush();
+						String[] trace = sw.toString().split("(\r)?\n");
+						for(String s : trace) {
+							writer.write(s);
+						}
+						writer.flush();
+						writer.close();
+					}
+
 					publish();
 				}
 

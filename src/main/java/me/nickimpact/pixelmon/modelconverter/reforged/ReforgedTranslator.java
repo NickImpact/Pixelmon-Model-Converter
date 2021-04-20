@@ -1,7 +1,7 @@
 package me.nickimpact.pixelmon.modelconverter.reforged;
 
 import com.google.common.collect.Lists;
-import me.nickimpact.pixelmon.modelconverter.ModelConverter;
+import com.google.common.io.ByteStreams;
 import me.nickimpact.pixelmon.modelconverter.Translator;
 import me.nickimpact.pixelmon.modelconverter.util.PrettyPrinter;
 
@@ -16,7 +16,9 @@ import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
@@ -24,6 +26,8 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Queue;
+import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -49,7 +53,7 @@ public abstract class ReforgedTranslator implements Translator {
                     debug("Parsing BMD: " + file.getName());
                     processed.getAndIncrement();
                     try {
-                        decode(file, new File(output, directory.getName()));
+                        this.decode(file.getName(), new FileInputStream(file), new File(output, directory.getName()));
                         successful.incrementAndGet();
                     } catch (Exception e) {
                         throw new RuntimeException("Failed to read BMD for pokemon: " + String.format("%s (%s)", directory.getName(), file.getName()), e);
@@ -78,12 +82,73 @@ public abstract class ReforgedTranslator implements Translator {
             }
         }
 
-        private static void decode(File input, File output) throws Exception {
-            File outFile = new File(output, input.getName().replaceFirst("[.][^.]+$", "") + ".smd");
+        @Override
+        public void process(JarFile file, JarEntry entry, File output) {
+            debug("Processing entry: " + entry.getName());
+            Matcher matcher = JAR_PATTERN.matcher(entry.getName());
+            matcher.find();
+            String[] remaining = matcher.group("rest").split("[/]");
+
+            Path target = output.toPath().resolve(matcher.group("species"));
+            String work;
+            if(remaining.length > 1) {
+                for(int i = 0; i < remaining.length - 1; i++) {
+                    target = target.resolve(remaining[i]);
+                }
+
+                work = remaining[remaining.length - 1];
+            } else {
+                work = remaining[0];
+            }
+            target.toFile().mkdirs();
+
+            if(entry.getName().endsWith(".bmd")) {
+                debug("Decoding BMD: " + work);
+
+                processed.getAndIncrement();
+                try {
+                    this.decode(work, file.getInputStream(entry), target.toFile());
+                    successful.incrementAndGet();
+                } catch (Exception e) {
+                    System.err.println("Failed to read BMD for pokemon: " + String.format("%s", entry.getName()));
+                    e.printStackTrace();
+                    System.exit(1);
+                }
+            } else if(entry.getName().endsWith(".smd")) {
+                debug("Cloning SMD: " + work);
+                processed.getAndIncrement();
+                try {
+                    this.copy(file.getInputStream(entry), target.resolve(work));
+                    successful.incrementAndGet();
+                } catch (Exception e) {
+                    System.err.println("Failed to clone SMD for pokemon: " + String.format("%s", entry.getName()));
+                }
+            } else if(entry.getName().endsWith(".pqc")) {
+                debug("Cloning PQC: " + work);
+                processed.getAndIncrement();
+                try {
+                    this.copy(file.getInputStream(entry), target.resolve(work));
+                    successful.incrementAndGet();
+                } catch (Exception e) {
+                    System.err.println("Failed to clone PQC for pokemon: " + String.format("%s", entry.getName()));
+                    e.printStackTrace();
+                }
+            }
+        }
+
+        private void copy(InputStream in, Path target) throws Exception {
+            FileOutputStream stream = new FileOutputStream(target.toFile());
+            ByteStreams.copy(in, stream);
+            stream.flush();
+            stream.close();
+        }
+
+        private void decode(String filename, InputStream input, File output) throws Exception {
+            File outFile = new File(output, filename.replaceFirst("[.][^.]+$", "") + ".smd");
             outFile.getParentFile().mkdirs();
             FileWriter writer = new FileWriter(outFile);
 
-            BufferedInputStream bin = new BufferedInputStream(new FileInputStream(input));
+            BufferedInputStream bin = new BufferedInputStream(input);
 
             DataInputStream in = new DataInputStream(bin);
             byte version = in.readByte();
@@ -235,6 +300,11 @@ public abstract class ReforgedTranslator implements Translator {
                     process(file, output.toPath().resolve(directory.getName()).toFile());
                 }
             }
+        }
+
+        @Override
+        public void process(JarFile file, JarEntry entry, File output) {
+            throw new UnsupportedOperationException();
         }
 
         private void encode(File input, File output) throws Exception {

@@ -18,8 +18,9 @@
           <autoscrolls value="false"/>
           <dialogTitle value="Select your Input"/>
           <dialogType value="0"/>
-          <fileSelectionMode value="1"/>
-          <name value="Select location"/>
+          <enabled value="false"/>
+          <fileSelectionMode value="2"/>
+          <name value="Select Input"/>
         </properties>
       </component>
     </children>
